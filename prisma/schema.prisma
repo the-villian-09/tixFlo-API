@@ -1,0 +1,133 @@
+// TixFlo v2 (Phase 1): core event + orders + tickets + atomic scan log
+// Prisma schema targets PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Prisma v7+ loads DATABASE_URL from prisma.config.ts
+}
+
+enum EventStatus {
+  draft
+  published
+}
+
+enum TicketStatus {
+  unused
+  used
+}
+
+enum ScanStatus {
+  valid
+  duplicate
+  invalid
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("users")
+}
+
+model Organization {
+  id              String   @id @default(cuid())
+  name            String
+  stripeAccountId String?  @map("stripe_account_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  events Event[]
+  orders Order[]
+
+  @@map("organizations")
+}
+
+model Event {
+  id             String      @id @default(cuid())
+  organizationId String      @map("organization_id")
+  name           String
+  date           DateTime
+  location       String
+  status         EventStatus @default(draft)
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  ticketTypes  TicketType[]
+  orders       Order[]
+  tickets      Ticket[]
+
+  @@index([organizationId])
+  @@map("events")
+}
+
+model TicketType {
+  id       String @id @default(cuid())
+  eventId  String @map("event_id")
+  name     String
+  price    Int // cents
+  quantity Int
+
+  event   Event    @relation(fields: [eventId], references: [id])
+  tickets Ticket[]
+
+  @@index([eventId])
+  @@map("ticket_types")
+}
+
+model Order {
+  id              String   @id @default(cuid())
+  eventId         String   @map("event_id")
+  organizationId  String   @map("organization_id")
+  buyerEmail      String   @map("buyer_email")
+  buyerPhone      String?  @map("buyer_phone")
+  stripeSessionId String?  @map("stripe_session_id")
+  accessTokenHash String   @unique @map("order_access_token_hash")
+  totalAmount     Int      @map("total_amount") // cents
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  event        Event        @relation(fields: [eventId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+  tickets      Ticket[]
+
+  @@index([eventId])
+  @@index([organizationId])
+  @@map("orders")
+}
+
+model Ticket {
+  id           String       @id @default(cuid())
+  eventId      String       @map("event_id")
+  ticketTypeId String       @map("ticket_type_id")
+  orderId      String       @map("order_id")
+  status       TicketStatus @default(unused)
+  qrToken      String       @unique @map("qr_token")
+  ticketLabel  String       @map("ticket_label")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  event      Event      @relation(fields: [eventId], references: [id])
+  ticketType TicketType @relation(fields: [ticketTypeId], references: [id])
+  order      Order      @relation(fields: [orderId], references: [id])
+  scans      Scan[]
+
+  @@index([eventId])
+  @@index([orderId])
+  @@index([ticketTypeId])
+  @@map("tickets")
+}
+
+model Scan {
+  id        String     @id @default(cuid())
+  ticketId  String     @map("ticket_id")
+  scannedAt DateTime   @default(now()) @map("scanned_at")
+  deviceId  String?    @map("device_id")
+  status    ScanStatus
+
+  ticket Ticket @relation(fields: [ticketId], references: [id])
+
+  @@index([ticketId, scannedAt])
+  @@map("scans")
+}
