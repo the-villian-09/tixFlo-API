@@ -182,6 +182,9 @@ export function createApp() {
     },
   };
 
+  // Swagger UI
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+  // Back-compat (older link)
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
   const env = {
@@ -373,28 +376,34 @@ export function createApp() {
     const input = validateSchema.parse(req.body);
 
     const result = await prisma.$transaction(async (tx) => {
-      const ticket = await tx.ticket.findUnique({ where: { qrToken: input.qrToken } });
-      if (!ticket) {
-        return { status: 'invalid' as const };
-      }
-
-      if (ticket.status === 'used') {
-        await tx.scan.create({
-          data: { ticketId: ticket.id, status: 'duplicate', deviceId: input.deviceId },
-        });
-        return { status: 'duplicate' as const, ticketId: ticket.id };
-      }
-
-      const updated = await tx.ticket.update({
-        where: { id: ticket.id },
+      // Atomic "first scan wins": one statement flips unused->used.
+      // If no rows are updated, the ticket is either invalid (no qrToken)
+      // or already used (duplicate).
+      const updated = await tx.ticket.updateMany({
+        where: { qrToken: input.qrToken, status: 'unused' },
         data: { status: 'used' },
       });
 
-      await tx.scan.create({
-        data: { ticketId: updated.id, status: 'valid', deviceId: input.deviceId },
-      });
+      if (updated.count === 1) {
+        const t = await tx.ticket.findUnique({ where: { qrToken: input.qrToken } });
+        // Should always exist here, but guard anyway.
+        if (!t) return { status: 'invalid' as const };
 
-      return { status: 'valid' as const, ticketId: updated.id };
+        await tx.scan.create({
+          data: { ticketId: t.id, status: 'valid', deviceId: input.deviceId },
+        });
+        return { status: 'valid' as const, ticketId: t.id };
+      }
+
+      const existing = await tx.ticket.findUnique({ where: { qrToken: input.qrToken } });
+      if (!existing) {
+        return { status: 'invalid' as const };
+      }
+
+      await tx.scan.create({
+        data: { ticketId: existing.id, status: 'duplicate', deviceId: input.deviceId },
+      });
+      return { status: 'duplicate' as const, ticketId: existing.id };
     });
 
     res.json(result);
