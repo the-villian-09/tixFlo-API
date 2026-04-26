@@ -45,8 +45,14 @@ describe('TixFlo Phase 1 API', () => {
 
     const accessRes = await request(app).get(`/v2/orders/access/${token}`);
     expect(accessRes.status).toBe(200);
-    expect(accessRes.body.ticketCount).toBe(2);
+    expect(accessRes.body.order.ticketCount).toBe(2);
+    expect(accessRes.body.order.status).toBe('paid');
+    expect(accessRes.body.order.access.token).toBe(token);
+    expect(accessRes.body.organization.id).toBe(orgId);
     expect(accessRes.body.event.id).toBe(eventId);
+    expect(accessRes.body.tickets).toHaveLength(2);
+    expect(accessRes.body.tickets[0].qr.token).toBeTruthy();
+    expect(accessRes.body.tickets[0].ticketType.name).toBe('Adult');
 
     const v1 = await request(app).post('/v2/validate-ticket').send({ qrToken, deviceId: 'dev1' });
     expect(v1.status).toBe(200);

@@ -341,29 +341,53 @@ export function createApp() {
       where: { accessTokenHash: tokenHash },
       include: {
         event: true,
+        organization: true,
         tickets: { include: { ticketType: true } },
       },
     });
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
+    const purchasedAt = order.createdAt.toISOString();
+    const currency = 'USD';
+
     res.json({
-      orderId: order.id,
-      buyerEmail: order.buyerEmail,
-      buyerPhone: order.buyerPhone,
+      order: {
+        id: order.id,
+        status: 'paid',
+        buyerEmail: order.buyerEmail,
+        buyerPhone: order.buyerPhone,
+        purchasedAt,
+        totalAmount: order.totalAmount,
+        currency,
+        ticketCount: order.tickets.length,
+        access: {
+          token,
+          orderLink: `/orders/access/${token}`,
+        },
+      },
+      organization: {
+        id: order.organization.id,
+        name: order.organization.name,
+      },
       event: {
         id: order.event.id,
         name: order.event.name,
         date: order.event.date,
         location: order.event.location,
       },
-      totalAmount: order.totalAmount,
-      ticketCount: order.tickets.length,
       tickets: order.tickets.map((t) => ({
         id: t.id,
-        ticketLabel: t.ticketLabel,
-        ticketTypeName: t.ticketType.name,
+        label: t.ticketLabel,
+        ticketType: {
+          id: t.ticketType.id,
+          name: t.ticketType.name,
+          price: t.ticketType.price,
+        },
         status: t.status,
-        qrToken: t.qrToken,
+        qr: {
+          token: t.qrToken,
+          payload: t.qrToken,
+        },
       })),
     });
   });
