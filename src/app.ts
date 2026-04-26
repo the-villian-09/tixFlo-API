@@ -461,6 +461,88 @@ export function createApp() {
     });
   });
 
+  app.get('/v2/events/:eventId/checkins', async (req, res) => {
+    const eventId = req.params.eventId;
+
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) return res.status(404).json({ error: 'Event not found' });
+
+    const scans = await prisma.scan.findMany({
+      where: { ticket: { eventId } },
+      orderBy: { scannedAt: 'desc' },
+      include: {
+        ticket: {
+          include: {
+            order: true,
+            ticketType: true,
+          },
+        },
+      },
+    });
+
+    res.json({
+      event: {
+        id: event.id,
+        name: event.name,
+        date: event.date,
+        location: event.location,
+      },
+      count: scans.length,
+      checkins: scans.map((scan) => ({
+        scanId: scan.id,
+        scannedAt: scan.scannedAt,
+        status: scan.status,
+        deviceId: scan.deviceId,
+        ticket: {
+          id: scan.ticket.id,
+          label: scan.ticket.ticketLabel,
+          status: scan.ticket.status,
+          ticketType: {
+            id: scan.ticket.ticketType.id,
+            name: scan.ticket.ticketType.name,
+          },
+        },
+        buyer: {
+          email: scan.ticket.order.buyerEmail,
+          phone: scan.ticket.order.buyerPhone,
+        },
+      })),
+    });
+  });
+
+  app.get('/v2/events/:eventId/checkin-summary', async (req, res) => {
+    const eventId = req.params.eventId;
+
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) return res.status(404).json({ error: 'Event not found' });
+
+    const [totalTickets, usedTickets, validScans, duplicateScans] = await Promise.all([
+      prisma.ticket.count({ where: { eventId } }),
+      prisma.ticket.count({ where: { eventId, status: 'used' } }),
+      prisma.scan.count({ where: { ticket: { eventId }, status: 'valid' } }),
+      prisma.scan.count({ where: { ticket: { eventId }, status: 'duplicate' } }),
+    ]);
+
+    res.json({
+      event: {
+        id: event.id,
+        name: event.name,
+        date: event.date,
+        location: event.location,
+      },
+      tickets: {
+        total: totalTickets,
+        used: usedTickets,
+        unused: totalTickets - usedTickets,
+      },
+      scans: {
+        valid: validScans,
+        duplicate: duplicateScans,
+        total: validScans + duplicateScans,
+      },
+    });
+  });
+
   app.post('/v2/validate-ticket', async (req, res) => {
     const input = validateSchema.parse(req.body);
 

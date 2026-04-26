@@ -89,6 +89,22 @@ describe('TixFlo Phase 1 API', () => {
     expect(v3.status).toBe(200);
     expect(v3.body.status).toBe('invalid');
 
+    const checkinsRes = await request(app).get(`/v2/events/${eventId}/checkins`);
+    expect(checkinsRes.status).toBe(200);
+    expect(checkinsRes.body.event.id).toBe(eventId);
+    expect(checkinsRes.body.count).toBe(2);
+    expect(checkinsRes.body.checkins[0]).toHaveProperty('scanId');
+    expect(checkinsRes.body.checkins[0]).toHaveProperty('deviceId');
+    expect(checkinsRes.body.checkins[0].ticket.ticketType.name).toBe('Adult');
+
+    const summaryRes = await request(app).get(`/v2/events/${eventId}/checkin-summary`);
+    expect(summaryRes.status).toBe(200);
+    expect(summaryRes.body.tickets.total).toBe(2);
+    expect(summaryRes.body.tickets.used).toBe(1);
+    expect(summaryRes.body.tickets.unused).toBe(1);
+    expect(summaryRes.body.scans.valid).toBe(1);
+    expect(summaryRes.body.scans.duplicate).toBe(1);
+
     await prisma.$disconnect();
     await pool.end();
   });
