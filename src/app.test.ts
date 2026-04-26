@@ -47,12 +47,35 @@ describe('TixFlo Phase 1 API', () => {
     expect(accessRes.status).toBe(200);
     expect(accessRes.body.order.ticketCount).toBe(2);
     expect(accessRes.body.order.status).toBe('paid');
+    expect(accessRes.body.order.deliveryStatus).toBe('pending');
     expect(accessRes.body.order.access.token).toBe(token);
     expect(accessRes.body.organization.id).toBe(orgId);
     expect(accessRes.body.event.id).toBe(eventId);
     expect(accessRes.body.tickets).toHaveLength(2);
     expect(accessRes.body.tickets[0].qr.token).toBeTruthy();
     expect(accessRes.body.tickets[0].ticketType.name).toBe('Adult');
+
+    const deliverRes = await request(app)
+      .post(`/v2/orders/${orderRes.body.orderId}/deliver`)
+      .send({ method: 'email' });
+    expect(deliverRes.status).toBe(200);
+    expect(deliverRes.body.deliveryStatus).toBe('delivered');
+    expect(deliverRes.body.deliveryMethod).toBe('email');
+    expect(deliverRes.body.resendCount).toBe(0);
+
+    const resendRes = await request(app)
+      .post(`/v2/orders/${orderRes.body.orderId}/resend`)
+      .send({ method: 'sms' });
+    expect(resendRes.status).toBe(200);
+    expect(resendRes.body.deliveryStatus).toBe('resent');
+    expect(resendRes.body.deliveryMethod).toBe('sms');
+    expect(resendRes.body.resendCount).toBe(1);
+
+    const accessAfterDeliveryRes = await request(app).get(`/v2/orders/access/${token}`);
+    expect(accessAfterDeliveryRes.status).toBe(200);
+    expect(accessAfterDeliveryRes.body.order.deliveryStatus).toBe('resent');
+    expect(accessAfterDeliveryRes.body.order.deliveryMethod).toBe('sms');
+    expect(accessAfterDeliveryRes.body.order.resendCount).toBe(1);
 
     const v1 = await request(app).post('/v2/validate-ticket').send({ qrToken, deviceId: 'dev1' });
     expect(v1.status).toBe(200);

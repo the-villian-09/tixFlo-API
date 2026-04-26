@@ -87,6 +87,11 @@ model Order {
   stripeSessionId String?  @map("stripe_session_id")
   accessTokenHash String   @unique @map("order_access_token_hash")
   totalAmount     Int      @map("total_amount") // cents
+  deliveryStatus  String   @default("pending") @map("delivery_status")
+  deliveryMethod  String?  @map("delivery_method")
+  deliveredAt     DateTime? @map("delivered_at")
+  lastSentAt      DateTime? @map("last_sent_at")
+  resendCount     Int      @default(0) @map("resend_count")
   createdAt       DateTime @default(now()) @map("created_at")
 
   event        Event        @relation(fields: [eventId], references: [id])

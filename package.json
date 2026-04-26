@@ -10,7 +10,12 @@
     "start": "node dist/server.js",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "test": "jest"
+    "test": "jest",
+    "db:up": "./scripts/db-up.sh",
+    "db:stop": "./scripts/db-stop.sh",
+    "db:reset": "./scripts/db-reset.sh",
+    "db:push": "prisma db push",
+    "test:db": "npm run db:up && npm run db:push && npm test -- --runInBand"
   },
   "keywords": [],
   "author": "",

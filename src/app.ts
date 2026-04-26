@@ -333,6 +333,70 @@ export function createApp() {
     });
   });
 
+  const updateOrderDeliverySchema = z.object({
+    method: z.enum(['email', 'sms', 'manual']).default('manual'),
+  });
+
+  app.post('/v2/orders/:orderId/deliver', async (req, res) => {
+    const orderId = req.params.orderId;
+    const input = updateOrderDeliverySchema.parse(req.body ?? {});
+
+    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const now = new Date();
+    const updated = await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        deliveryStatus: 'delivered',
+        deliveryMethod: input.method,
+        deliveredAt: now,
+        lastSentAt: now,
+      },
+    });
+
+    res.json({
+      orderId: updated.id,
+      deliveryStatus: updated.deliveryStatus,
+      deliveryMethod: updated.deliveryMethod,
+      deliveredAt: updated.deliveredAt,
+      lastSentAt: updated.lastSentAt,
+      resendCount: updated.resendCount,
+    });
+  });
+
+  app.post('/v2/orders/:orderId/resend', async (req, res) => {
+    const orderId = req.params.orderId;
+    const input = updateOrderDeliverySchema.parse(req.body ?? {});
+
+    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const updated = await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        deliveryStatus: 'resent',
+        deliveryMethod: input.method,
+        lastSentAt: new Date(),
+        resendCount: { increment: 1 },
+      },
+    });
+
+    res.json({
+      orderId: updated.id,
+      deliveryStatus: updated.deliveryStatus,
+      deliveryMethod: updated.deliveryMethod,
+      deliveredAt: updated.deliveredAt,
+      lastSentAt: updated.lastSentAt,
+      resendCount: updated.resendCount,
+    });
+  });
+
+  const validateSchema = z.object({
+    qrToken: z.string().min(1),
+    deviceId: z.string().min(1).optional(),
+  });
+
   app.get('/v2/orders/access/:token', async (req, res) => {
     const token = req.params.token;
     const tokenHash = hashOrderToken(token);
@@ -354,12 +418,17 @@ export function createApp() {
       order: {
         id: order.id,
         status: 'paid',
+        deliveryStatus: order.deliveryStatus,
+        deliveryMethod: order.deliveryMethod,
         buyerEmail: order.buyerEmail,
         buyerPhone: order.buyerPhone,
         purchasedAt,
         totalAmount: order.totalAmount,
         currency,
         ticketCount: order.tickets.length,
+        deliveredAt: order.deliveredAt,
+        lastSentAt: order.lastSentAt,
+        resendCount: order.resendCount,
         access: {
           token,
           orderLink: `/orders/access/${token}`,
@@ -392,10 +461,6 @@ export function createApp() {
     });
   });
 
-  const validateSchema = z.object({
-    qrToken: z.string().min(10),
-    deviceId: z.string().min(1).optional(),
-  });
   app.post('/v2/validate-ticket', async (req, res) => {
     const input = validateSchema.parse(req.body);
 
