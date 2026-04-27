@@ -3,7 +3,7 @@ import { createApp } from './app';
 
 describe('TixFlo Phase 1 API', () => {
   it('creates an order and validates one ticket exactly once', async () => {
-    const { app, prisma, pool } = createApp();
+    const { app, prisma } = createApp();
 
     const orgRes = await request(app).post('/v2/orgs').send({ name: 'QA Org' });
     expect(orgRes.status).toBe(201);
@@ -106,6 +106,5 @@ describe('TixFlo Phase 1 API', () => {
     expect(summaryRes.body.scans.duplicate).toBe(1);
 
     await prisma.$disconnect();
-    await pool.end();
   });
 });

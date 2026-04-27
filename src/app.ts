@@ -6,8 +6,6 @@ import morgan from 'morgan';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import crypto from 'crypto';
-import pg from 'pg';
-import { PrismaPg } from '@prisma/adapter-pg';
 import swaggerUi from 'swagger-ui-express';
 import swaggerJSDoc from 'swagger-jsdoc';
 
@@ -15,9 +13,16 @@ export function createApp() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error('DATABASE_URL is required');
 
-  const pool = new pg.Pool({ connectionString });
-  const adapter = new PrismaPg(pool);
-  const prisma = new PrismaClient({ adapter });
+  const parsedUrl = new URL(connectionString);
+  console.log('TixFlo DB target', {
+    protocol: parsedUrl.protocol,
+    host: parsedUrl.hostname,
+    port: parsedUrl.port,
+    database: parsedUrl.pathname.replace(/^\//, ''),
+    username: parsedUrl.username,
+  });
+
+  const prisma = new PrismaClient();
 
   const app = express();
 
@@ -398,67 +403,72 @@ export function createApp() {
   });
 
   app.get('/v2/orders/access/:token', async (req, res) => {
-    const token = req.params.token;
-    const tokenHash = hashOrderToken(token);
+    try {
+      const token = req.params.token;
+      const tokenHash = hashOrderToken(token);
 
-    const order = await prisma.order.findUnique({
-      where: { accessTokenHash: tokenHash },
-      include: {
-        event: true,
-        organization: true,
-        tickets: { include: { ticketType: true } },
-      },
-    });
-    if (!order) return res.status(404).json({ error: 'Order not found' });
+      const order = await prisma.order.findUnique({
+        where: { accessTokenHash: tokenHash },
+        include: {
+          event: true,
+          organization: true,
+          tickets: { include: { ticketType: true } },
+        },
+      });
+      if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    const purchasedAt = order.createdAt.toISOString();
-    const currency = 'USD';
+      const purchasedAt = order.createdAt.toISOString();
+      const currency = 'USD';
 
-    res.json({
-      order: {
-        id: order.id,
-        status: 'paid',
-        deliveryStatus: order.deliveryStatus,
-        deliveryMethod: order.deliveryMethod,
-        buyerEmail: order.buyerEmail,
-        buyerPhone: order.buyerPhone,
-        purchasedAt,
-        totalAmount: order.totalAmount,
-        currency,
-        ticketCount: order.tickets.length,
-        deliveredAt: order.deliveredAt,
-        lastSentAt: order.lastSentAt,
-        resendCount: order.resendCount,
-        access: {
-          token,
-          orderLink: `/orders/access/${token}`,
+      res.json({
+        order: {
+          id: order.id,
+          status: 'paid',
+          deliveryStatus: order.deliveryStatus,
+          deliveryMethod: order.deliveryMethod,
+          buyerEmail: order.buyerEmail,
+          buyerPhone: order.buyerPhone,
+          purchasedAt,
+          totalAmount: order.totalAmount,
+          currency,
+          ticketCount: order.tickets.length,
+          deliveredAt: order.deliveredAt,
+          lastSentAt: order.lastSentAt,
+          resendCount: order.resendCount,
+          access: {
+            token,
+            orderLink: `/orders/access/${token}`,
+          },
         },
-      },
-      organization: {
-        id: order.organization.id,
-        name: order.organization.name,
-      },
-      event: {
-        id: order.event.id,
-        name: order.event.name,
-        date: order.event.date,
-        location: order.event.location,
-      },
-      tickets: order.tickets.map((t) => ({
-        id: t.id,
-        label: t.ticketLabel,
-        ticketType: {
-          id: t.ticketType.id,
-          name: t.ticketType.name,
-          price: t.ticketType.price,
+        organization: {
+          id: order.organization.id,
+          name: order.organization.name,
         },
-        status: t.status,
-        qr: {
-          token: t.qrToken,
-          payload: t.qrToken,
+        event: {
+          id: order.event.id,
+          name: order.event.name,
+          date: order.event.date,
+          location: order.event.location,
         },
-      })),
-    });
+        tickets: order.tickets.map((t) => ({
+          id: t.id,
+          label: t.ticketLabel,
+          ticketType: {
+            id: t.ticketType.id,
+            name: t.ticketType.name,
+            price: t.ticketType.price,
+          },
+          status: t.status,
+          qr: {
+            token: t.qrToken,
+            payload: t.qrToken,
+          },
+        })),
+      });
+    } catch (error) {
+      console.error('GET /v2/orders/access/:token failed', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
   app.get('/v2/events/:eventId/checkins', async (req, res) => {
@@ -580,5 +590,10 @@ export function createApp() {
     res.json(result);
   });
 
-  return { app, prisma, pool };
+  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error('UNHANDLED_APP_ERROR', err);
+    res.status(500).json({ error: 'Internal server error' });
+  });
+
+  return { app, prisma };
 }
